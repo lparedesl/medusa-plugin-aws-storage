@@ -315,7 +315,7 @@ class AwsStorageService extends AbstractFileService {
       Key: this.getKeyFromFile(file),
       Body: file?.path ? createReadStream(file.path) : new PassThrough(),
       ...this.uploadOptions_,
-      ACL: isProtected ? 'private' : this.uploadOptions_.ACL,
+      ACL: isProtected ? 'private' : this.uploadOptions_.ACL || 'public-read',
     };
   }
 
