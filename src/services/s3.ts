@@ -8,7 +8,6 @@ import {
   Distribution,
   DistributionConfig,
   GetDistributionCommand,
-  GetDistributionConfigCommand,
   Origin,
 } from '@aws-sdk/client-cloudfront';
 import {
@@ -21,7 +20,8 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
-  DeleteFileType, FileServiceGetUploadStreamResult,
+  DeleteFileType,
+  FileServiceGetUploadStreamResult,
   FileServiceUploadResult,
   GetUploadedFileType,
   UploadStreamDescriptorType,
@@ -45,6 +45,7 @@ class AwsStorageService extends AbstractFileService {
 
   constructor(container, options) {
     super(container, options);
+    console.info('constructor -- options', options);
 
     const commonAwsConfig = {
       region: options.region,
@@ -90,11 +91,16 @@ class AwsStorageService extends AbstractFileService {
 
   private setBaseUrl(distribution: Distribution, domainName: string): void {
     let baseUrl = `${this.bucketName_}.s3.amazonaws.com`;
+    console.info('setBaseUrl -- distribution', distribution);
     const distributionConfig = distribution.DistributionConfig;
+    console.info('setBaseUrl -- distributionConfig', distributionConfig);
 
     if (distribution.DomainName) {
       baseUrl = distribution.DomainName;
     }
+
+    console.info('setBaseUrl -- domainName', domainName);
+    console.info('setBaseUrl -- distributionConfig.Aliases.Items', distributionConfig?.Aliases?.Items);
 
     if (domainName) {
       if (distributionConfig?.Aliases?.Items?.length) {
@@ -114,13 +120,14 @@ class AwsStorageService extends AbstractFileService {
   /**
    * @summary This method only runs when the CloudFront distribution ID is provided.
    */
-  private setS3Origin(
-    distributionConfig: DistributionConfig,
-    s3Origin: string,
-  ): void {
+  private setS3Origin(distributionConfig: DistributionConfig, s3Origin: string): void {
     const s3Origins = distributionConfig.Origins?.Items?.filter((o) => {
       return o.DomainName.endsWith('.s3.amazonaws.com');
     }) ?? [];
+    console.info('setS3Origin -- s3Origin', s3Origin);
+    console.info('setS3Origin -- distributionConfig.Origins.Items', distributionConfig.Origins?.Items);
+    console.info('setS3Origin -- s3Origins', s3Origins);
+    console.info('setS3Origin -- distributionConfig.DefaultCacheBehavior', distributionConfig.DefaultCacheBehavior);
     const defaultCacheBehaviorOriginId = distributionConfig.DefaultCacheBehavior?.TargetOriginId;
     let origin = s3Origins.find((o) => o.Id === defaultCacheBehaviorOriginId) ?? s3Origins[0];
     const notFoundMessage = `S3 origin path '${s3Origin}' is not included in the CloudFront distribution origins. Using default cache behavior S3 origin.`;
@@ -156,12 +163,17 @@ class AwsStorageService extends AbstractFileService {
       ViewerProtocolPolicy: 'allow-all',
     };
 
+    console.info('setCacheBehaviorPathPattern -- distributionConfig.DefaultCacheBehavior', distributionConfig.DefaultCacheBehavior);
+
     if (distributionConfig.DefaultCacheBehavior) {
       defaultCacheBehavior.TargetOriginId = distributionConfig.DefaultCacheBehavior.TargetOriginId;
       defaultCacheBehavior.ViewerProtocolPolicy = distributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy;
     }
 
     let cacheBehavior = defaultCacheBehavior;
+
+    console.info('setCacheBehaviorPathPattern -- distributionConfig.CacheBehaviors.Items', distributionConfig.CacheBehaviors?.Items);
+    console.info('setCacheBehaviorPathPattern -- cacheBehaviorPathPattern', cacheBehaviorPathPattern);
 
     if (distributionConfig.CacheBehaviors?.Items?.length) {
       if (cacheBehaviorPathPattern) {
@@ -176,6 +188,9 @@ class AwsStorageService extends AbstractFileService {
     } else if (cacheBehaviorPathPattern) {
       console.warn(notFoundMessage);
     }
+
+    console.info('setCacheBehaviorPathPattern -- cacheBehavior', cacheBehavior);
+    console.info('setCacheBehaviorPathPattern -- s3Origin_', this.s3Origin_);
 
     if (cacheBehavior.TargetOriginId !== this.s3Origin_?.Id) {
       const targetOrigin = distributionConfig.Origins?.Items?.find((o) => o.Id === cacheBehavior.TargetOriginId);
@@ -262,6 +277,10 @@ class AwsStorageService extends AbstractFileService {
         };
       }
 
+      console.info('init -- baseUrl_', this.baseUrl_);
+      console.info('init -- s3Origin_', this.s3Origin_);
+      console.info('init -- cacheBehavior_', this.cacheBehavior_);
+
       return;
     }
 
@@ -269,6 +288,9 @@ class AwsStorageService extends AbstractFileService {
       this.setBaseUrl(distribution, domainName);
       this.setS3Origin(distribution.DistributionConfig, s3Origin);
       this.setCacheBehaviorPathPattern(distribution.DistributionConfig, cacheBehaviorPathPattern);
+      console.info('init -- baseUrl_', this.baseUrl_);
+      console.info('init -- s3Origin_', this.s3Origin_);
+      console.info('init -- cacheBehavior_', this.cacheBehavior_);
     }).catch((error) => {
       this.setDefaults();
 
@@ -279,6 +301,11 @@ class AwsStorageService extends AbstractFileService {
           OriginPath: s3Origin,
         };
       }
+
+      console.info('init.getCloudFrontDistribution -- error', error);
+      console.info('init.getCloudFrontDistribution -- baseUrl_', this.baseUrl_);
+      console.info('init.getCloudFrontDistribution -- s3Origin_', this.s3Origin_);
+      console.info('init.getCloudFrontDistribution -- cacheBehavior_', this.cacheBehavior_);
     });
   }
 
@@ -294,13 +321,18 @@ class AwsStorageService extends AbstractFileService {
 
   private async uploadFile(file, isProtected = false): Promise<FileServiceUploadResult> {
     const params = this.getPutObjectCommandInput(file, isProtected);
+    console.info('uploadFile -- params', params);
     const data = await this.s3Client_.send(
       new PutObjectCommand(params),
     );
+    console.info('uploadFile -- data', data);
 
     if (!data) {
       throw new Error('File upload failed');
     }
+
+    console.info('uploadFile -- key (relative)', this.getUrlFromKey(params.Key, true));
+    console.info('uploadFile -- key', this.getUrlFromKey(params.Key));
 
     await this.invalidateFile(this.getUrlFromKey(params.Key, true));
 
@@ -340,12 +372,15 @@ class AwsStorageService extends AbstractFileService {
           },
         }),
       );
+      console.info('invalidateFile -- data', data);
     } catch (e) {
+      console.info('invalidateFile -- error', e);
       console.warn(`Invalidation failed for path: ${path}`);
     }
   }
 
   upload(file): Promise<FileServiceUploadResult> {
+    console.info('upload -- file', file);
     return this.uploadFile(file);
   }
 
