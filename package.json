@@ -1,6 +1,6 @@
 {
   "name": "medusa-plugin-aws-storage",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Medusa plugin for AWS storage",
   "author": "Luis Paredes <lparedesl@gmail.com>",
   "license": "MIT",
