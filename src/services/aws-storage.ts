@@ -18,7 +18,8 @@ import {
   PutObjectCommandInput,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getSignedUrl as getS3SignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getSignedUrl as getCloudFrontSignedUrl } from "@aws-sdk/cloudfront-signer";
 import {
   DeleteFileType,
   FileServiceGetUploadStreamResult,
@@ -38,6 +39,8 @@ class AwsStorageService extends AbstractFileService {
   protected readonly s3OriginPath_: string;
   protected readonly cacheBehaviorPathPattern_: string;
   protected readonly downloadUrlDuration_: number;
+  protected readonly cloudFrontKeyPairId_: string;
+  protected readonly cloudFrontKeyPrivateKey_: string;
   protected bucketName_: string;
   protected cloudFrontDistribution_: Distribution;
   protected s3Origin_: Origin;
@@ -80,6 +83,8 @@ class AwsStorageService extends AbstractFileService {
     this.domainName_ = options.domain_name;
     this.cacheBehaviorPathPattern_ = options.cloud_front_cache_behavior_path_pattern;
     this.downloadUrlDuration_ = options.download_url_duration;
+    this.cloudFrontKeyPairId_ = options.cloud_front_key_pair_id;
+    this.cloudFrontKeyPrivateKey_ = options.cloud_front_key_private_key;
   }
 
   private async getCloudFrontDistribution(distributionId: string): Promise<Distribution> {
@@ -448,7 +453,19 @@ class AwsStorageService extends AbstractFileService {
     const params = this.getPutObjectCommandInput(file);
     const command = new GetObjectCommand(params);
 
-    return getSignedUrl(this.s3Client_, command, { expiresIn: this.downloadUrlDuration_ });
+    if (!this.cloudFrontDistributionId_) {
+      return getS3SignedUrl(this.s3Client_, command, { expiresIn: this.downloadUrlDuration_ });
+    }
+
+    const now = new Date();
+    const expiresDate = new Date(now.getTime() + this.downloadUrlDuration_ * 1000);
+
+    return getCloudFrontSignedUrl({
+      url: this.getUrlFromKey(params.Key),
+      keyPairId: this.cloudFrontKeyPairId_,
+      dateLessThan: expiresDate.toISOString(),
+      privateKey: this.cloudFrontKeyPrivateKey_,
+    });
   }
 }
 
